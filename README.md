@@ -1,8 +1,8 @@
 # Rail
-Application similar to irctc.co.in, made using web2py
+Application similar to irctc.co.in, made using web2py framework.
 
 Features:
-1.Book ticket
-2.Ticket cancellation
-3.Booked history
-4.PNR status
+1.Book ticket <br/>
+2.Ticket cancellation <br/>
+3.Booked history <br/>
+4.PNR status <br/>
