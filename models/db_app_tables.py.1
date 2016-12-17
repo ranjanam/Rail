@@ -1,0 +1,93 @@
+# -*- coding: utf-8 -*-
+db.define_table('station',
+                Field('id', type='id'),
+                Field('name','string'))
+
+db.define_table('train_details',
+                Field('tno', 'integer'),
+                Field('name', 'string'),
+                Field('source_id', 'list:reference station' , requires=IS_IN_DB(db, 'station.id')),
+                Field('dest_id', 'list:reference station', requires=IS_IN_DB(db, 'station.id')),
+                Field('speed', 'double'),
+                primarykey=['tno'])
+
+db.define_table('train',
+               Field('tid', 'integer'),
+               Field('num', 'list:reference train_details' , requires=IS_IN_DB(db, db.train_details.tno)))
+
+db.define_table('coach',
+                Field('train_id', 'list:reference train' , requires=IS_IN_DB(db, 'train.tid')),
+                Field('coach_name', 'string'),
+                Field('total_seats', 'string'),
+                Field('amount', 'double'))
+
+#check train_id #check required
+db.define_table('availability',
+                Field('train_id', 'list:reference train' , requires=IS_IN_DB(db, 'train.tid')),
+                Field('coach_name', 'string'),
+                Field('available', 'integer'),
+                Field('DOJ' 'date', widget=SQLFORM.widgets.date.widget))
+
+db.define_table('ticket',
+                 Field('id', type='id'),
+                 Field('user_id', db.auth_user, requires=IS_IN_DB(db, db.auth_user.id)),
+                 Field('train_num', 'list:reference train', requires=IS_IN_DB(db, db.train.num)),
+                 Field('source_id', 'list:reference station' , requires=IS_IN_DB(db, db.station.id) ),
+                 Field('dest_id', 'list:reference station' , requires=IS_IN_DB(db, db.station.id) ),
+                 Field('pnr_num', 'string', unique=True),
+                 Field('DOJ', 'date', widget=SQLFORM.widgets.date.widget),
+                 Field('DOB', 'date'),
+                 Field('amount', 'integer'),
+                 Field('coach', 'string'),
+                 Field('total_pass', 'integer'),
+                 Field('status', 'string'),
+                 Field('curr_time', 'datetime', widget=SQLFORM.widgets.datetime.widget))
+
+#check if not required
+db.define_table('available_days',
+                Field('train_id', 'list:reference train', requires=IS_IN_DB(db, db.train.tid)),  #check
+                Field('station_id', 'list:reference station', requires=IS_IN_DB(db, db.station.id)),
+                Field('sun', 'boolean'),
+                Field('mon', 'boolean'),
+                Field('wed', 'boolean'),
+                Field('thur', 'boolean'),
+                Field('fri', 'boolean'),
+                Field('sat', 'boolean'))
+
+db.define_table('route',
+                Field('train_id', 'list:reference train', requires=IS_IN_DB(db, db.train.tid)),
+                Field('train_num', 'list:reference train', requires=IS_IN_DB(db, db.train_details.tno)),
+                Field('stop_num', 'integer'),
+                Field('station_id', 'list:reference station' , requires=IS_IN_DB(db, db.station.id)),
+                Field('arr_day', 'list:integer'),
+                Field('dep_day', 'list:integer'),
+                Field('arr_time', 'time', widget=SQLFORM.widgets.time.widget),
+                Field('dep_time', 'time', widget=SQLFORM.widgets.time.widget),
+                Field('dist_from_source', 'integer'))
+db.define_table('A1',
+                Field('seat_num', 'integer'),
+                Field('pass_name', 'string'),
+                Field('age', 'string'),
+                Field('gender', 'string'),
+                Field('status', 'string'),
+                Field('ticket_id', 'list:reference ticket', requires=IS_IN_DB(db, db.ticket.id)),
+                Field('pnr_num', 'string'))#check reference
+db.define_table('B1',
+                Field('seat_num', 'integer'),
+                Field('pass_name', 'string'),
+                Field('age', 'string'),
+                Field('gender', 'string'),
+                Field('status', 'string'),
+                Field('ticket_id', 'list:reference ticket', requires=IS_IN_DB(db, db.ticket.id)),
+                Field('pnr_num', 'string')) #check reference
+db.define_table('SL',
+                Field('seat_num', 'integer'),
+                Field('pass_name', 'string'),
+                Field('age', 'string'),
+                Field('gender', 'string'),
+                Field('status', 'string'),
+                Field('ticket_id', 'list:reference ticket', requires=IS_IN_DB(db, db.ticket.id)),
+                Field('pnr_num', 'string'))#check reference
+db.define_table('bank',
+                Field('card_type', 'string'),
+                Field('name', 'string'))

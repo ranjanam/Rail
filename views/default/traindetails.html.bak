@@ -1,0 +1,39 @@
+{{left_sidebar_enabled,right_sidebar_enabled=False,False}}
+{{extend 'layout.html'}}
+<div class="container">
+    <div class="row">
+        <div id="web2py_user_form" class="col-md-6">
+            {{=form}}
+        </div>
+         </div>
+</div>
+<!-- <form action="getDetails" >
+         <table>
+             <tr>
+                 <td>Source</td>
+                 <td><select name="source">
+                     {{for st in stations:}}
+                     <option value="{{=st.id}}"> {{=st.name}} </option>
+                     {{pass}}
+                 </td>
+             </tr>
+             <tr>
+                 <td>Destination</td>
+                 <td> <select name="destination">
+                     {{for st in stations:}}
+                     <option value="{{=st.id}}"> {{=st.name}} </option>
+                     {{pass}}
+                     </select>
+                 </td>
+             </tr>
+             <tr>
+                 <td> Date </td>
+                 <td></td>
+             </tr>
+             <tr>
+                 <td><input type="submit" name="submit"></td>
+             </tr>
+         </table>
+    </form> -->
+
+{{=BEAUTIFY(response._vars)}}
