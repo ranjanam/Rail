@@ -60,12 +60,10 @@
                 {{=LOAD('default','query.load',ajax=True)}}
             </div>
         </div>
-    <div id="availabletickets">
+    <div id="availabletickets" class="col-md-8">
         {{=LOAD('default','availabletickets.load',ajax=True, target="bookticket")}}
     </div>
-    <div id="traindetails" class="col-md-8">
-        {{=LOAD('default','traindetails.load',ajax=True, target="bookticket")}}
-    </div>
+    {{=LOAD('default','traindetails.load',ajax=True, target="bookticket")}}
          <footer class="footer">
       <div class="container-fluid">
         <div class="copyright pull-left">{{=T('Copyright')}} © {{=request.now.year}}</div>

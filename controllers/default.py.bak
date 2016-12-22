@@ -57,8 +57,10 @@ def call():
     """
     return service()
 
+#validate provided source, destination and date information
 @auth.requires_login()
 def validatedetails(form):
+    #convert selected date in date object for comparision later
     selecteddate = datetime.datetime.strptime(form.vars.doj, "%Y-%m-%d").date()
     if form.vars.source == form.vars.dest:
         form.errors = "Source and destination must be different"
@@ -73,13 +75,16 @@ def validatedetails(form):
 def bookticket():
     return dict()
 
+#create panel for providing source, destination and date
 @auth.requires_login()
 def query():
     stations = db(db.station).select()
+    #get list of all stations
     list1 = SELECT(*[OPTION(stations[i].name, _value=str(stations[i].id)) for i in range(len(stations))], _name="source", requires=IS_NOT_EMPTY())
     list2 = SELECT(*[OPTION(stations[i].name, _value=str(stations[i].id)) for i in range(len(stations))], _name="dest", requires=IS_NOT_EMPTY())
     table = DIV(DIV(H3('DETAILS', _class="panel-title"), _class="panel-heading"), TABLE(TR(TD('SOURCE'),TD(list1)),TR(TD('DESTINATION'),TD(list2)),TR(TD('DATE'), TD(INPUT(_class='date', _name='doj',widget=SQLFORM.widgets.date.widget, requires=IS_NOT_EMPTY()))), TR(TD( INPUT(_value='submit',_type='submit', _class='btn btn-default'))), _class="table-condensed"), _class="panel panel-info")
     form = FORM(table)
+    #load appropriate details based on the source and destination selected
     if form.process(onvalidation=validatedetails,keepvalues=True).accepted:
             data_url = URL('default', 'traindetails.load',vars=dict(source=request.vars.source, dest=request.vars.dest, doj=request.vars.doj))
             response.js = '$.web2py.component("%s", "traindetails")' % data_url
@@ -89,37 +94,50 @@ def query():
             response.flash=""
     return dict(form=form)
 
+#calculates trains available for provided source, destination and date information
 @auth.requires_login()
 def traindetails():
     if request.vars.source:
+        #get day from date
         doj= datetime.datetime.strptime(request.vars.doj, '%Y-%m-%d').strftime('%a')
+        #get value for the day
         doj=days[doj]
+        #get list of all routes which travel through the station
         sources = db((db.route.station_id == request.vars.source)).select(db.route.ALL)
         sources_list=[]
         for s in sources:
+            #selected station must departure from the selected station on the day(date)
             if len(s.dep_day)>0 and s.dep_day[doj] == 1:
                 sources_list.append(s)
         sources = sources_list
+        #get list of all routes which reach destination
         dests = db(db.route.station_id == request.vars.dest).select(db.route.ALL)
         availableTrains = []
         for s in sources:
             for d in dests:
+                #check if source and destination are of same train(same train_id and train_num) and source stop_num < dest stop_num
                 if s.train_id == d.train_id and s.stop_num < d.stop_num and s.train_num == d.train_num:
+                    #get train details for name
                     train = db(db.train_details.tno == int(s.train_num[0])).select()
+                    #get list of coaches for that train_num
                     coaches = db(db.coach.train_num == s.train_num).select()
                     links=[]
+                    #for each coach create links for available tickets
                     for c in coaches:
+                        #distance travelled by train for the selected source and dest
                         dist= d.dist_from_source - s.dist_from_source
                         data_url = URL('default', 'availabletickets.load', vars=dict(tid=s.train_id[0], source=s.station_id, dest=d.station_id, coach=c.coach_name, doj=request.vars.doj, tno=s.train_num, dist = dist))
                         links.append(A(c.coach_name,_href=data_url, cid='availabletickets'))
                     availableTrains.append(TR(TD(s.train_num[0], _class="col-md-1"), TD(train[0].name, _class="col-md-1"), TD(s.dep_time, _class="col-md-1"), TD(d.arr_time, _class="col-md-1"),TD(d.dist_from_source - s.dist_from_source, _class="col-md-1"), TD(links, _class="col-md-1")))
                     break
+        #if no train for selected stations and date
         if len(availableTrains) == 0:
             availableTrains = DIV(SPAN('NO TRAINS AVAILABLE'))
             data_url = URL('default', 'availabletickets.load',vars=dict())
             response.js = '$.web2py.component("%s", "availabletickets")' % data_url
         else :
             availableTrains= TABLE(THEAD(TR(TH('TRAIN NUMBER', _class="col-md-1 panel-title"), TH('TRAIN NAME', _class="col-md-1 panel-title"), TH('DEPARTURE TIME ', _class="col-md-1 panel-title"),TH('ARRIVAL TIME', _class="col-md-1 panel-title"), TH('DISTANCE', _class="col-md-1 panel-title"), TH('COACH', _class="col-md-1 panel-title")),_class="panel-heading"), TBODY(availableTrains), _class="table-condensed table-bordered panel panel-info")
+            #when new query is made clear old 'available' panel
             data_url = URL('default', 'availabletickets.load',vars=dict())
             response.js = '$.web2py.component("%s", "availabletickets")' % data_url
         return dict(trains=availableTrains)
@@ -128,23 +146,32 @@ def traindetails():
         response.js = '$.web2py.component("%s", "availabletickets")' % data_url
         return dict(trains='')
 
+#get getavailableseats for provided source, destination and date information
 def getavailableseats(tno, tid, doj, coach, source, dest):
+    #for given train calculate total seats for selected coach
     map = db((db.coach.train_num == tno) & (db.coach.coach_name == coach)).select()
+    #intitally mark all seats as free('F' - free)
     map = ['F']*(map[0].total_seats)
+    #select tickets booked for the selected train on that date and orderby the time of booking
     rows = db((db.ticket.DOJ == doj) & (db.ticket.coach == coach) & (db.ticket.train_num == tno)).select(orderby=db.ticket.curr_time)
+    #get all rows for that train_num and train_id
     stops = db((db.route.train_id == tid)&(db.route.train_num == tno)).select()
+    #get stop number for selected source and destination for that train
     source_stop = [s for s in stops if s.station_id[0] == int(source)]
     source_stop = source_stop[0].stop_num
     dest_stop = [s for s in stops if s.station_id[0] == int(dest)]
     dest_stop = dest_stop[0].stop_num
     amount=0
     for r in rows:
+        #get stop number based on the station id in ticket
         stop1_details = [s for s in stops if s.station_id[0] == r.source_id]
         stop2_details = [s for s in stops if s.station_id[0] == r.dest_id]
         stop1 = stop1_details[0].stop_num
         stop2 = stop2_details[0].stop_num
+        #no clash, hence allowed
         if (dest_stop<=stop1 or source_stop>=stop2):
             pass
+        #no ticket booking
         elif (source_stop<=stop1 and stop2>=dest_stop) or (stop1<source_stop and source_stop<stop2) or (stop1<dest_stop and dest_stop<stop2):
             if coach == 'A1' :
                 seats = db(db.A1.pnr_num == r.id).select()
@@ -152,11 +179,15 @@ def getavailableseats(tno, tid, doj, coach, source, dest):
                 seats = db(db.B1.pnr_num == r.id).select()
             elif coach == 'SL':
                 seats = db(db.SL.pnr_num == r.id).select()
+            #if status is confirmed then mark it occupied else free
             for s in seats:
                 if s.status=="CONFIRMED":
                     map[s.seat_num-1]='O'
+                elif s.status == "CANCELLED" and s.is_alloted == False:
+                    map[s.seat_num-1] = s.pnr_num
     return map
 
+#render available tickets
 @auth.requires_login()
 def availabletickets():
     if request.vars.tno:
@@ -185,6 +216,7 @@ def availabletickets():
     else :
         return dict(available='')
 
+#validate passenger details
 @auth.requires_login()
 def checkpassengerdetails(rows):
     i = 1
@@ -209,6 +241,7 @@ def checkpassengerdetails(rows):
     if len(data)==0:
          rows.errors = "Please fill proper details"
 
+#render passenger form
 @auth.requires_login()
 def passengerform():
     i=1
@@ -219,8 +252,11 @@ def passengerform():
     train = db(db.train_details.tno == session.train_num).select(db.train_details.name)
     source = db(db.station.id == session.source_id).select(db.station.name)
     dest = db(db.station.id == session.dest_id).select(db.station.name)
+    #show selected train details
     details = TABLE(THEAD(TR(TH('TRAIN DETAILS', _class="panel-title"),TH()),_class="panel-heading"), TBODY(TR(TD('TRAIN NUMBER : '+str(session.train_num)),TD('TRAIN NAME : '+train[0].name)), TR(TD('SOURCE : '+str(source[0].name)),TD('DESTINATION : '+str(dest[0].name))),TR(TD('DATE OF JOURNEY : '+session.doj),TD('COACH :  '+session.coach))), _class="panel panel-info col-md-12 table-condensed")
+    #passenger form
     rows= FORM(TABLE(THEAD(TR(TH('PASSNGER NAME', _class="col-md-4 panel-title"), TH('AGE', _class="col-md-4 panel-title"), TH('GENDER', _class="col-md-4 panel-title")),_class="panel-heading"), TBODY(rows), _class="table-condensed table-bordered col-md-12 panel panel-info"),INPUT(_value='next',_type='submit', _class='btn btn-default') )
+    #store passenger details in session
     if rows.process(onvalidation=checkpassengerdetails, keepvalues=True).accepted:
         session.passengers = data
         redirect(URL('default', 'selectbank'))
@@ -230,11 +266,13 @@ def passengerform():
         response.flash="Please fill proper details"
     return dict(table=rows,details=details)
 
+#validate bank selection
 @auth.requires_login()
 def validateSelection(form):
     if form.vars.banks=="":
         form.errors = "Please select a bank"
 
+#render bank selection page
 @auth.requires_login()
 def selectbank():
     banks = db(db.bank.id>0).select()
@@ -265,6 +303,7 @@ def selectbank():
         response.flash="Please select a bank"
     return dict(rows=form1)
 
+#get train info from pnr
 def gettraindetails(pnr):
     ticket = db(db.ticket.id==pnr).select()
     train_details = db(db.train_details.tno == ticket[0].train_num).select()
@@ -273,6 +312,7 @@ def gettraindetails(pnr):
     details = TABLE(THEAD(TR(TH('TRAIN DETAILS', _class="panel-title"),TH()),_class="panel-heading"), TBODY(TR(TD('TRAIN NUMBER : '+str(train_details[0].tno)),TD('TRAIN NAME : '+train_details[0].name)), TR(TD('SOURCE : '+str(source[0].name)),TD('DESTINATION : '+str(dest[0].name))),TR(TD('DATE OF JOURNEY : '+str(ticket[0].DOJ)),TD('COACH :  '+ticket[0].coach))), _class="panel panel-info col-md-12 table-condensed")
     return details
 
+#get ticket details from passengers
 def getinfo(pnr):
     ticket = db(db.ticket.id==pnr).select()
     if len(ticket) == 0:
@@ -295,25 +335,34 @@ def getinfo(pnr):
     table = FORM(TABLE(THEAD(TR(TH('SNO', _class="col-md-1 panel-title"), TH('PASSNGER NAME', _class="col-md-3 panel-title"), TH('AGE', _class="col-md-2 panel-title"), TH('GENDER', _class="col-md-2 panel-title"), TH('SEAT_NUM', _class="col-md-2 panel-title"), TH('STATUS', _class="col-md-2 panel-title")),_class="panel-heading"), TBODY(pass_list), _class="table-condensed table-bordered col-md-12 panel panel-info"))
     return dict(train_info=details, pass_list=table)
 
+#account details page
 @auth.requires_login()
 def bank():
     form=FORM(H2(session.bank),TABLE(TBODY(TR(TD('CARD NUMBER'), TD(INPUT(_type="text", _name="card-num", requires=IS_NOT_EMPTY()))),TR(TD('NAME ON CARD'), TD(INPUT(_type="text",_name="name-on-card",  requires=IS_NOT_EMPTY()))), TR(TD('VALID THROUGH'), TD(INPUT(_type="text",_name="valid_thru",  requires=IS_NOT_EMPTY()))), TR(TD('CVV'), TD(INPUT(_type="text",_name="cvv",  requires=IS_NOT_EMPTY()))), TR(TD(INPUT(_type="submit", _value="Make Payment")))), _class="table-condensed col-md-4"))
     if form.process().accepted:
+        #get available seats
         map = getavailableseats(session.train_num, session.train_id, session.doj, session.coach, session.source_id, session.dest_id)
         total_psngrs = len(session.passengers)
         coach=session.coach
         i = k = isWaiting = 0
+        #for free seats allot passengers with seat numbers. For cancelled seats, if the seat is already alloted then we get it in confirmed list. else it is marked as free and occupied by a passenger.
         while i<total_psngrs and k<len(map):
             while k<len(map) and map[k]=='O':
                 k+=1
             if k>=len(map):
                 break
             psngr = session.passengers[i]
-            psngr.append(k+1)
-            psngr.append("CONFIRMED")
+            #append pnr id of the cancelled ticket to update is_alloted flag
+            if map[k]!='F':
+                psngr.append(k+1)
+                psngr.append(map[k])
+            else :
+                psngr.append(k+1)
+                psngr.append("CONFIRMED")
             session.passengers[i] = psngr
             k+=1
             i+=1
+        #mark status as waiting and do not allot seat num as 0
         while i<total_psngrs:
             isWaiting=1
             psngr = session.passengers[i]
@@ -321,7 +370,9 @@ def bank():
             psngr.append("WAITING")
             session.passengers[i] = psngr
             i+=1
+        #if there is atleast a single waiting passenger then mark it as waiting else confirmed
         stat = "WAITING" if isWaiting else "CONFIRMED"
+        #to remove time shift.
         now = datetime.datetime.now()-timeshift
         id = db.ticket.insert(user_id=auth.user_id,
                  train_id = int(session.train_id),
@@ -335,10 +386,16 @@ def bank():
                  total_pass=total_psngrs,
                  status=stat,
                  curr_time=now)
+        #if ticket entry successfull, then mark seats in indivaidual coach table
         if len(db(db.ticket.id == id).select()) !=0:
             if coach == 'A1':
                 for p in session.passengers:
                     seatno=p[3]
+                    #update cancelled ticket status, as alloted
+                    if p[4] != 'CONFIRMED' and p[4]!="WAITING":
+                        db((ab.A1.seat_num==seatno)&(db.A1.pnr_num==p[4])).update(is_alloted=True)
+                        p[4] = "CONFIRMED"
+                    #insert new row for the new ticket
                     db.A1.insert(seat_num=seatno,
                             pass_name=p[0],
                             age=p[1],
@@ -348,6 +405,9 @@ def bank():
             elif coach == 'B1':
                  for p in session.passengers:
                     seatno=p[3]
+                    if p[4] != 'CONFIRMED' and p[4]!="WAITING":
+                        db((ab.B1.seat_num==seatno)&(db.B1.pnr_num==p[4])).update(is_alloted=True)
+                        p[4] = "CONFIRMED"
                     db.B1.insert(seat_num=seatno,
                             pass_name=p[0],
                             age=p[1],
@@ -357,6 +417,9 @@ def bank():
             else:
                 for p in session.passengers:
                     seatno=p[3]
+                    if p[4] != 'CONFIRMED' and p[4]!="WAITING":
+                        db((ab.SL.seat_num==seatno)&(db.SL.pnr_num==p[4])).update(is_alloted=True)
+                        p[4] = "CONFIRMED"
                     db.B1.insert(seat_num=seatno,
                             pass_name=p[0],
                             age=p[1],
@@ -369,6 +432,7 @@ def bank():
             response.flash = ""
     return dict(form=form)
 
+#get pnr status depending on number provided
 def pnrstatus():
     form = FORM(TABLE(TR(TD('PNR NUMBER'), INPUT(_type="text",id="pnr_num",_value=request.vars.pnr, _name="pnr_num", requires=IS_NOT_EMPTY())), TR(TD(INPUT(_type="submit"))), _class="col-md-4 table-condensed"))
     details={'train_info':'', 'pass_list':''}
@@ -379,6 +443,7 @@ def pnrstatus():
     response.flash=""
     return dict(form=form, train_info=details['train_info'], pass_list=details['pass_list'])
 
+#get history of booked tickets
 @auth.requires_login()
 def history():
     tickets = db(db.ticket.user_id == auth.user_id).select()
@@ -393,18 +458,23 @@ def history():
     table = FORM(TABLE(THEAD(TR(TH('SNO', _class="col-md-2 panel-title"), TH('BOOKING ID', _class="col-md-2 panel-title"), TH('PNR NUMBER ', _class="col-md-2 panel-title"), TH('DATE OF JOURNEY', _class="col-md-2 panel-title"), TH('DATE OF BOOKING', _class="col-md-2 panel-title"), TH('STATUS', _class="col-md-2 panel-title")),_class="panel-heading"), TBODY(all_tickets), _class="table-condensed table-bordered col-md-12 panel panel-info"))
     return dict(table=table)
 
+#validate ticket cancellation
+@auth.requires_login()
 def validatecancel(form):
     if not form.vars.cancel:
         form.errors="Please select ticket for cancellation"
 
+#cancel ticket page
 @auth.requires_login()
 def cancelticket():
+    #get tickets booked by logged in user
     tickets = db(db.ticket.user_id == auth.user_id).select()
     if len(tickets) == 0:
         table = DIV('NO HISTORY')
         return dict(pnrlist=table)
     all_tickets=[]
     i=1
+    #do not show ticket older than today
     for t in tickets:
         if t.DOJ<datetime.datetime.today().date():
             continue
@@ -413,7 +483,7 @@ def cancelticket():
     if len(all_tickets)>0:
         form = FORM(TABLE(THEAD(TR(TH( _class="col-md-2 panel-title"), TH('BOOKING ID', _class="col-md-2 panel-title"), TH('PNR NUMBER ', _class="col-md-2 panel-title"), TH('DATE OF JOURNEY', _class="col-md-2 panel-title"), TH('DATE OF BOOKING', _class="col-md-2 panel-title"), TH('STATUS', _class="col-md-2 panel-title")),_class="panel-heading"), TBODY(all_tickets), _class="table-condensed table-bordered col-md-12 panel panel-info"), INPUT(_value='cancel ticket',_type='submit', _class='btn btn-default'))
     else:
-        form=FORM('NO NEW TICKETS') #change message
+        form=FORM('NO TICKETS FOR CANCELLATION')
     if form.process(onvalidation=validatecancel).accepted:
         redirect(URL('default', 'selectpassengers', vars=dict(ticketid=form.vars.cancel)))
     elif form.errors:
@@ -430,6 +500,7 @@ def makelist(ticketid):
         passengers = db(db.SL.pnr_num == ticket[0].id).select()
     pass_list=[]
     isCancelled=True
+    #render passenger list
     for p in passengers:
         if p.status == "WAITING":
             seatno = "-"
@@ -445,10 +516,13 @@ def makelist(ticketid):
     cancellist = FORM(TABLE(THEAD(TR(TH(_class="col-md-1 panel-title"), TH('PASSENGER NAME', _class="col-md-3 panel-title"), TH('AGE', _class="col-md-2 panel-title"), TH('GENDER', _class="col-md-2 panel-title"), TH('SEAT_NUM', _class="col-md-2 panel-title"), TH('STATUS', _class="col-md-2 panel-title")),_class="panel-heading"), TBODY(pass_list), _class="table-condensed table-bordered col-md-12 panel panel-info"), ip)
     return cancellist
 
+#validate selected passengers
 def validate(cancellist):
     if cancellist.vars.psngrlist == None:
         cancellist.errors="Please select passengers"
 
+#render passenger list
+@auth.requires_login()
 def cancelledlist():
     ticketid=request.vars.ticketid
     ticket = db(db.ticket.id==ticketid).select()
@@ -462,6 +536,7 @@ def cancelledlist():
             all_data = cancellist.vars.psngrlist
         elif type(cancellist.vars.psngrlist) == str:
             all_data = [cancellist.vars.psngrlist]
+        #for all selected passengers for cancellation mark status as cancelled
         for p in all_data:
             p = int(p)
             if ticket[0].coach == 'A1':
@@ -477,8 +552,10 @@ def cancelledlist():
         elif ticket[0].coach == 'SL':
             passengers = db(db.SL.pnr_num == ticket[0].id).select()
         passengers = [p for p in passengers if p.status!="CANCELLED"]
+        #if all passengers for the ticket are cancelled then update ticket status as cancelled
         if len(passengers)==0:
             db(db.ticket.id == ticketid).update(status="CANCELLED")
+        #get passengers who are waiting and occupied on same train on the date
         waiting_list = db((db.ticket.train_num==train_num)&(db.ticket.DOJ == DOJ)&(db.ticket.coach == coach)&(db.ticket.status=="WAITING")).select(orderby=db.ticket.curr_time)
         occupied_list = db((db.ticket.train_num==train_num)&(db.ticket.DOJ == DOJ)&(db.ticket.coach == coach)&(db.ticket.status!="WAITING")).select(orderby=db.ticket.curr_time)
         tot_map = db((db.coach.train_num == train_num)).select(db.coach.total_seats)
@@ -496,6 +573,7 @@ def cancelledlist():
             source_stop = source_stop[0].stop_num
             dest_stop = [s for s in stops if s.station_id[0] == int(w.dest_id)]
             dest_stop = dest_stop[0].stop_num
+            #check clash for waiting and already alloted list
             for o in occupied_list:
                 stop1_details = [s for s in stops if s.station_id[0] == o.source_id]
                 stop2_details = [s for s in stops if s.station_id[0] == o.dest_id]
@@ -515,6 +593,7 @@ def cancelledlist():
                             map[n.seat_num-1] = 'O'
                         elif n.status == "CANCELLED" and  n.is_alloted == False:
                             map[n.seat_num-1] = n.id
+            #allot seat num and update status as confirmed for waiting passengers
             for m in range(len(map)):
                 if coach == 'A1':
                     if map[m] == 'F':
@@ -540,6 +619,7 @@ def cancelledlist():
                         num = db(db.B1.id == map[m]).select(db.SL.seat_num)
                         db(db.SL.id == wait_pass[i].id).update(seat_num = num[0].seat_num, status="CONFIRMED")
                         i+=1
+                #update ticket status as confirmed of no passenger is waiting
                 if i>=len(wait_pass):
                     wait = wait_pass[0].pnr_num[0]
                     if coach == 'A1':
@@ -552,6 +632,7 @@ def cancelledlist():
                     if len(all_pass)==0:
                         db(db.ticket.id == wait).update(status="CONFIRMED")
                     break
+        #render updated list
         cancellist = makelist(ticketid)
     elif cancellist.errors:
         response.flash=cancellist.errors
